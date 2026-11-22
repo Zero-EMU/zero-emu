@@ -6,6 +6,7 @@ A dual-screen handheld emulator for iPhone, designed for the foldable iPhone Duo
 
 - Support / 支持: https://zero-emu.github.io/zero-emu/support.html
 - Privacy policy / 隐私政策: https://zero-emu.github.io/zero-emu/privacy.html
+- User agreement / 用户协议: https://zero-emu.github.io/zero-emu/terms.html
 - Contact / 联系: zeroemu@outlook.com
 
 This repository holds Zero EMU's support and privacy pages. The source code of each released version of the app (GNU General Public License v3.0) is published here when that version is released.
