@@ -1,0 +1,254 @@
+diff --git a/src/common/file_util.cpp b/src/common/file_util.cpp
+index 3168a26..e2ce9ed 100644
+--- a/src/common/file_util.cpp
++++ b/src/common/file_util.cpp
+@@ -1055,12 +1055,40 @@ bool StringReplace(std::string& haystack, const std::string& a, const std::strin
+     return true;
+ }
+ 
++// Modified by FoldArc on 2026-10-28: a loaded path that still names another
++// install's user directory (states saved before the archives stored their paths
++// as FileUtil::Path kept raw host paths; on iOS the folder holding the user
++// directory moves with app updates and reinstalls, and FoldArc moved it into
++// Documents) is moved onto the current user directory. Only paths that continue
++// below an "Azahar" user directory with one of its own folders are touched; the
++// first such directory from the left is the user directory (a folder of that
++// name inside the SD card comes after it).
++static std::string RebaseForeignUserPath(const std::string& path) {
++    const std::string& user = GetUserPath(UserPath::UserDir);
++    if (path.empty() || user.empty() || path.starts_with(user)) {
++        return path;
++    }
++    static const std::string marker = "/Azahar/";
++    for (auto pos = path.find(marker); pos != std::string::npos; pos = path.find(marker, pos + 1)) {
++        const std::string_view rest = std::string_view(path).substr(pos + marker.size());
++        for (const std::string_view folder : {"sdmc", "nand", "sysdata", "load"}) {
++            if (rest.starts_with(folder) && (rest.size() == folder.size() || rest[folder.size()] == '/')) {
++                return user + std::string(rest);
++            }
++        }
++    }
++    return path;
++}
++
+ std::string SerializePath(const std::string& input, bool is_saving) {
+     auto result = input;
+     StringReplace(result, "%CITRA_ROM_FILE%", g_currentRomPath, is_saving);
+     StringReplace(result, "%CITRA_USER_DIR%", GetUserPath(UserPath::UserDir), is_saving);
+     StringReplace(result, "%CITRA_USER_SDMC%", GetUserPath(UserPath::SDMCDir), is_saving);
+     StringReplace(result, "%CITRA_USER_NAND%", GetUserPath(UserPath::NANDDir), is_saving);
++    if (!is_saving) {
++        result = RebaseForeignUserPath(result);
++    }
+     return result;
+ }
+ 
+diff --git a/src/core/file_sys/archive_extsavedata.h b/src/core/file_sys/archive_extsavedata.h
+index c1a2a3f..a0eb4ab 100644
+--- a/src/core/file_sys/archive_extsavedata.h
++++ b/src/core/file_sys/archive_extsavedata.h
+@@ -10,6 +10,7 @@
+ #include <string>
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "common/common_types.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/file_sys/artic_cache.h"
+@@ -87,7 +88,10 @@ private:
+         ar& boost::serialization::base_object<ArchiveFactory>(*this);
+         ar& boost::serialization::base_object<ArticCacheProvider>(*this);
+         ar & type;
+-        ar & mount_point;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(mount_point);
+     }
+     friend class boost::serialization::access;
+ };
+diff --git a/src/core/file_sys/archive_nand.h b/src/core/file_sys/archive_nand.h
+index e8480a1..e9a7f17 100644
+--- a/src/core/file_sys/archive_nand.h
++++ b/src/core/file_sys/archive_nand.h
+@@ -9,6 +9,7 @@
+ #include <boost/serialization/base_object.hpp>
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/hle/result.h"
+ 
+@@ -50,7 +51,10 @@ protected:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveBackend>(*this);
+-        ar & mount_point;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(mount_point);
+         ar & archive_type;
+     }
+     friend class boost::serialization::access;
+@@ -103,7 +107,7 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveFactory>(*this);
+-        ar & nand_directory;
++        ar& FileUtil::Path::make(nand_directory);
+         ar & archive_type;
+     }
+     friend class boost::serialization::access;
+diff --git a/src/core/file_sys/archive_sdmc.h b/src/core/file_sys/archive_sdmc.h
+index 460c93f..1dd483c 100644
+--- a/src/core/file_sys/archive_sdmc.h
++++ b/src/core/file_sys/archive_sdmc.h
+@@ -9,6 +9,7 @@
+ #include <boost/serialization/base_object.hpp>
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/hle/result.h"
+ 
+@@ -47,7 +48,10 @@ protected:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveBackend>(*this);
+-        ar & mount_point;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(mount_point);
+     }
+     friend class boost::serialization::access;
+ };
+@@ -79,7 +83,7 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveFactory>(*this);
+-        ar & sdmc_directory;
++        ar& FileUtil::Path::make(sdmc_directory);
+     }
+     friend class boost::serialization::access;
+ };
+diff --git a/src/core/file_sys/archive_sdmcwriteonly.h b/src/core/file_sys/archive_sdmcwriteonly.h
+index 3b52c40..49d2555 100644
+--- a/src/core/file_sys/archive_sdmcwriteonly.h
++++ b/src/core/file_sys/archive_sdmcwriteonly.h
+@@ -65,7 +65,10 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveFactory>(*this);
+-        ar & sdmc_directory;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(sdmc_directory);
+     }
+     friend class boost::serialization::access;
+ };
+@@ -77,3 +80,4 @@ class SDMCWriteOnlyDelayGenerator;
+ BOOST_CLASS_EXPORT_KEY(FileSys::SDMCWriteOnlyArchive)
+ BOOST_CLASS_EXPORT_KEY(FileSys::ArchiveFactory_SDMCWriteOnly)
+ BOOST_CLASS_EXPORT_KEY(FileSys::SDMCWriteOnlyDelayGenerator)
++#include "common/file_util.h"
+diff --git a/src/core/file_sys/archive_source_sd_savedata.h b/src/core/file_sys/archive_source_sd_savedata.h
+index d116517..1a6907e 100644
+--- a/src/core/file_sys/archive_source_sd_savedata.h
++++ b/src/core/file_sys/archive_source_sd_savedata.h
+@@ -8,6 +8,7 @@
+ #include <string>
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/file_sys/artic_cache.h"
+ #include "core/hle/result.h"
+@@ -51,7 +52,10 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArticCacheProvider>(*this);
+-        ar & mount_point;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(mount_point);
+     }
+     friend class boost::serialization::access;
+ };
+diff --git a/src/core/file_sys/archive_systemsavedata.h b/src/core/file_sys/archive_systemsavedata.h
+index 169ed3a..37c8bd0 100644
+--- a/src/core/file_sys/archive_systemsavedata.h
++++ b/src/core/file_sys/archive_systemsavedata.h
+@@ -8,6 +8,7 @@
+ #include <string>
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "common/common_types.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/file_sys/artic_cache.h"
+@@ -56,7 +57,10 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveFactory>(*this);
+-        ar & base_path;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(base_path);
+     }
+     friend class boost::serialization::access;
+ };
+diff --git a/src/core/file_sys/layered_fs.h b/src/core/file_sys/layered_fs.h
+index 93b8300..bea4491 100644
+--- a/src/core/file_sys/layered_fs.h
++++ b/src/core/file_sys/layered_fs.h
+@@ -13,6 +13,7 @@
+ #include <boost/serialization/export.hpp>
+ #include <boost/serialization/shared_ptr.hpp>
+ #include <boost/serialization/string.hpp>
++#include "common/file_util.h"
+ #include "common/common_types.h"
+ #include "common/swap.h"
+ #include "core/file_sys/romfs_reader.h"
+@@ -142,8 +143,11 @@ private:
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<RomFSReader>(*this);
+         ar & romfs;
+-        ar & patch_path;
+-        ar & patch_ext_path;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(patch_path);
++        ar& FileUtil::Path::make(patch_ext_path);
+         ar & load_relocations;
+         if (Archive::is_loading::value) {
+             Load();
+diff --git a/src/core/file_sys/savedata_archive.h b/src/core/file_sys/savedata_archive.h
+index bfe8ed9..1841d37 100644
+--- a/src/core/file_sys/savedata_archive.h
++++ b/src/core/file_sys/savedata_archive.h
+@@ -5,6 +5,7 @@
+ #pragma once
+ 
+ #include <string>
++#include "common/file_util.h"
+ #include "core/file_sys/archive_backend.h"
+ #include "core/file_sys/directory_backend.h"
+ #include "core/file_sys/file_backend.h"
+@@ -43,7 +44,10 @@ private:
+     template <class Archive>
+     void serialize(Archive& ar, const unsigned int) {
+         ar& boost::serialization::base_object<ArchiveBackend>(*this);
+-        ar & mount_point;
++        // Modified by FoldArc on 2026-10-28: stored as a FileUtil::Path, so a state
++        // keeps the user directory as a placeholder instead of this install's host
++        // path (on iOS the app's container path changes with updates).
++        ar& FileUtil::Path::make(mount_point);
+         ar & allow_zero_size_create;
+     }
+     friend class boost::serialization::access;

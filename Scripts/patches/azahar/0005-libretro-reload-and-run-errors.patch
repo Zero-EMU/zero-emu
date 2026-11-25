@@ -1,0 +1,27 @@
+diff --git a/src/citra_libretro/citra_libretro.cpp b/src/citra_libretro/citra_libretro.cpp
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -302,6 +302,11 @@
+             }
+ 
+             LibRetro::DisplayMessage(msg.c_str());
++            // Modified by FoldArc on 2026-10-27: return instead of retrying. An error that
++            // RunLoop reports on every call (ErrorNotInitialized when no game is running)
++            // kept this loop spinning forever: retro_run never returned and flooded the
++            // frontend with messages, which then could not even unload the game.
++            break;
+         }
+     }
+ }
+@@ -635,6 +640,11 @@
+ void retro_unload_game() {
+     LOG_DEBUG(Frontend, "Unloading game...");
+     Core::System::GetInstance().Shutdown();
++    // Modified by FoldArc on 2026-10-27: with a hardware renderer retro_load_game only
++    // records the path, and context_reset loads the game while game_loaded is false.
++    // Left true, the next game in the same session was never loaded and every
++    // retro_run failed with "Fatal Error encountered (1)" (ErrorNotInitialized).
++    emu_instance->game_loaded = false;
+ }
+ 
+ unsigned retro_get_region() {

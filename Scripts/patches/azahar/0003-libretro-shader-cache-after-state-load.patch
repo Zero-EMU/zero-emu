@@ -1,0 +1,25 @@
+diff --git a/src/citra_libretro/citra_libretro.cpp b/src/citra_libretro/citra_libretro.cpp
+index 8a65f9d..029e919 100644
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -730,7 +730,19 @@ bool retro_unserialize(const void* data, size_t size) {
+ 
+     std::vector<u8> buffer(static_cast<const u8*>(data), static_cast<const u8*>(data) + size);
+     try {
+-        return system.LoadStateBuffer(std::move(buffer));
++        const bool loaded = system.LoadStateBuffer(std::move(buffer));
++        // Modified by FoldArc on 2026-10-27: loading a state shuts the system down
++        // and initialises it again, which recreates the renderer. Repeat
++        // do_load_game's shader-cache setup, or the new Vulkan pipeline cache has
++        // no current disk cache and the first accelerated draw dereferences null.
++        if (loaded && Settings::values.use_disk_shader_cache &&
++            Settings::values.graphics_api.GetValue() != Settings::GraphicsAPI::Software) {
++            u64 program_id{};
++            system.GetAppLoader().ReadProgramId(program_id);
++            system.GPU().ApplyPerProgramSettings(program_id);
++            system.GPU().Renderer().Rasterizer()->LoadDefaultDiskResources(false, nullptr);
++        }
++        return loaded;
+     } catch (const std::exception& e) {
+         LOG_ERROR(Frontend, "Error loading state: {}", e.what());
+         return false;

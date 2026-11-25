@@ -1,0 +1,35 @@
+diff --git a/src/audio_core/libretro_input.cpp b/src/audio_core/libretro_input.cpp
+index 7fffe76..fff785a 100644
+--- a/src/audio_core/libretro_input.cpp
++++ b/src/audio_core/libretro_input.cpp
+@@ -229,12 +229,24 @@ void LibRetroInput::PollMicrophone() {
+     // without an explicit barrier.
+     std::atomic_thread_fence(std::memory_order_acquire);
+ 
+-    int samples_read = impl->mic_interface->read_mic(impl->mic_handle, impl->read_buffer.data(),
+-                                                     static_cast<size_t>(impl->read_buffer.size()));
+-
+-    if (samples_read > 0) {
+-        impl->sample_buffer.Push(
+-            std::span<const s16>(impl->read_buffer.data(), static_cast<size_t>(samples_read)));
++    // Modified by FoldArc on 2026-10-28: read until the frontend has nothing
++    // more. A single 128-sample read per retro_run is 7680 samples a second
++    // at 60 fps, a sixth of the 48 kHz the microphone was opened at, and the
++    // mic service falls behind real time. FoldArc's read_mic never blocks and
++    // returns what is due, so this stops once it returns a short read; the
++    // bound keeps a frontend whose read_mic blocks until the buffer is full
++    // from stalling a frame for long (16 reads = 2048 samples, 43 ms).
++    for (int reads = 0; reads < 16; reads++) {
++        int samples_read = impl->mic_interface->read_mic(
++            impl->mic_handle, impl->read_buffer.data(), static_cast<size_t>(impl->read_buffer.size()));
++
++        if (samples_read > 0) {
++            impl->sample_buffer.Push(
++                std::span<const s16>(impl->read_buffer.data(), static_cast<size_t>(samples_read)));
++        }
++        if (samples_read < static_cast<int>(impl->read_buffer.size())) {
++            break;
++        }
+     }
+ }
+ 

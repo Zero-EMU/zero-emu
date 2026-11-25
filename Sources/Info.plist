@@ -1,0 +1,179 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<!-- Partial Info.plist: merged with the Xcode-generated keys (GENERATE_INFOPLIST_FILE = YES). -->
+	<!-- 11-07 (the C2 ring, the boot animation): the background alone, the
+	     icon's white (dark mode near black); the app draws the ring on it
+	     (SplashView). LaunchLogo stays in the catalogue, unused. -->
+	<key>UILaunchScreen</key>
+	<dict>
+		<key>UIColorName</key>
+		<string>LaunchBackground</string>
+	</dict>
+	<!-- The Files app shows FoldArc's Documents folder ("On My iPhone ›
+	     FoldArc"): the emulated console's own storage (Azahar/: SD card, NAND,
+	     the games' save data), see Storage.consoleStorage(). Files handed to
+	     FoldArc ("Open in FoldArc") arrive where they are, without a copy in
+	     Documents/Inbox; the library makes its own copy as with any import. -->
+	<key>UIFileSharingEnabled</key>
+	<true/>
+	<key>LSSupportsOpeningDocumentsInPlace</key>
+	<true/>
+	<!-- External controllers (GameControllerInput): the extended gamepad
+	     profile. With these the App Store shows controller support and the
+	     system's per-app controller customisation applies. -->
+	<key>GCSupportsControllerUserInteraction</key>
+	<true/>
+	<key>GCSupportedGameControllers</key>
+	<array>
+		<dict>
+			<key>ProfileName</key>
+			<string>ExtendedGamepad</string>
+		</dict>
+	</array>
+	<!-- No Game Mode keys yet: Apple rejects apps that enable Game Mode but
+	     are not games, and the App Store category is still open
+	     (Docs/APPSTORE-READINESS-20261028.md). If it is Games, add
+	     GCSupportsGameMode (iOS 18+), LSSupportsGameMode (iOS 26+) and
+	     LSApplicationCategoryType = public.app-category.games. -->
+	<!-- No ITSAppUsesNonExemptEncryption on purpose: the core links LibreSSL
+	     (the emulated console's SSL service can make TLS connections) and
+	     Crypto++, so the export compliance answer is the developer's call at
+	     upload. Facts and options: Docs/APPSTORE-READINESS-20261028.md. -->
+	<!-- Software running in the emulated console can open sockets (the core
+	     maps the console's network service onto the device's), e.g. homebrew
+	     that waits on the local network for a computer to send it a
+	     program. -->
+	<key>NSLocalNetworkUsageDescription</key>
+	<string>在 Zero EMU 里运行的软件可能会使用本地网络，例如自制软件会等待同一网络里的电脑发来程序。Zero EMU 不收集任何数据。</string>
+	<!-- 相机 (round 25): the console's camera app uses the front camera as
+	     its inner camera and the back camera as its outer one. Pictures are
+	     saved to the console's SD card folder in FoldArc's Files folder and
+	     (11-06) added to Photos; nothing leaves the device. -->
+	<key>NSCameraUsageDescription</key>
+	<string>Zero EMU 的「相机」用 iPhone 的前置摄像头当掌机的内侧相机、后置摄像头当外侧相机来拍照和录像。照片和录像存在 Zero EMU 的 SD 卡文件夹里，也存一份到「照片」，不会上传。铅笔盒里的镜子也用前置摄像头，只是照着看，不保存画面。</string>
+	<!-- 11-06: each picture the camera takes is added to Photos (add
+	     only: FoldArc does not read the library). -->
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>Zero EMU 的「相机」拍的照片、录的录像和编辑过的照片会存一份到「照片」。Zero EMU 不读取你的照片。</string>
+	<!-- 11-06: blowing on the iPhone's microphone is the console's MIC
+	     (相机's 闪闪, 麦克风测试, software that listens for a breath). Only a
+	     level is worked out; nothing is recorded or sent. -->
+	<key>NSMicrophoneUsageDescription</key>
+	<string>对着 iPhone 吹气就是对着掌机的麦克风吹气（相机的「闪闪」、生日蛋糕盒吹蜡烛拍照、麦克风测试、典藏卡带片子里起风、要吹气的游戏）；相机录像时也录下声音。录像的声音只存在录像文件里，其余时候 Zero EMU 只听有没有在吹，不录音，也不上传。</string>
+	<!-- Files the user can hand to FoldArc ("Open in FoldArc"). FoldArc copies
+	     them into its library after checking the container marker and the
+	     NCCH crypto flags; it ships none of them. The type identifiers are
+	     FoldArc's own: there are no system UTIs for these formats. -->
+	<key>CFBundleDocumentTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>3DS 卡带镜像</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.foldarc.3ds-cartridge-image</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>3DS 程序</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.foldarc.3ds-executable</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
+			<string>3DS Homebrew</string>
+			<key>CFBundleTypeRole</key>
+			<string>Viewer</string>
+			<key>LSHandlerRank</key>
+			<string>Alternate</string>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>org.foldarc.3dsx</string>
+				<string>org.foldarc.3ds-elf</string>
+			</array>
+		</dict>
+	</array>
+	<key>UTImportedTypeDeclarations</key>
+	<array>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.foldarc.3ds-cartridge-image</string>
+			<key>UTTypeDescription</key>
+			<string>3DS 卡带镜像（NCSD）</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>3ds</string><string>cci</string><string>zcci</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.foldarc.3ds-executable</string>
+			<key>UTTypeDescription</key>
+			<string>3DS 程序（NCCH）</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>cxi</string><string>app</string><string>zcxi</string><string>cia</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.foldarc.3dsx</string>
+			<key>UTTypeDescription</key>
+			<string>3DS Homebrew（3DSX）</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>3dsx</string><string>z3dsx</string></array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>org.foldarc.3ds-elf</string>
+			<key>UTTypeDescription</key>
+			<string>3DS Homebrew（ELF）</string>
+			<key>UTTypeConformsTo</key>
+			<array><string>public.data</string></array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array><string>elf</string></array>
+			</dict>
+		</dict>
+	</array>
+	<!-- 11-07: the app's iCloud container shows in Files as iCloud Drive › Zero EMU
+	     (存档同步 › App 自己的 iCloud 空间 puts the saves in its Documents). -->
+	<key>NSUbiquitousContainers</key>
+	<dict>
+		<key>iCloud.$(CFBundleIdentifier)</key>
+		<dict>
+			<key>NSUbiquitousContainerIsDocumentScopePublic</key>
+			<true/>
+			<key>NSUbiquitousContainerName</key>
+			<string>Zero EMU</string>
+			<key>NSUbiquitousContainerSupportedFolderLevels</key>
+			<string>Any</string>
+		</dict>
+	</dict>
+</dict>
+</plist>

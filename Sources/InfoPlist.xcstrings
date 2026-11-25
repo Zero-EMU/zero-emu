@@ -1,0 +1,74 @@
+{
+  "sourceLanguage": "en",
+  "strings": {
+    "NSLocalNetworkUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Software running inside Zero EMU may use the local network — for example, homebrew that waits for a computer on the same network to send it a program. Zero EMU collects no data."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在 Zero EMU 里运行的软件可能会使用本地网络，例如自制软件会等待同一网络里的电脑发来程序。Zero EMU 不收集任何数据。"
+          }
+        }
+      }
+    },
+    "NSCameraUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zero EMU's Camera uses the iPhone's front camera as the handheld's inner camera and the back camera as its outer one, for photos and video. They are kept in Zero EMU's SD-card folder and a copy goes to Photos; nothing is uploaded. The mirror in the pencil box also uses the front camera, only to look into; no picture of it is kept."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zero EMU 的「相机」用 iPhone 的前置摄像头当掌机的内侧相机、后置摄像头当外侧相机来拍照和录像。照片和录像存在 Zero EMU 的 SD 卡文件夹里，也存一份到「照片」，不会上传。铅笔盒里的镜子也用前置摄像头，只是照着看，不保存画面。"
+          }
+        }
+      }
+    },
+    "NSPhotoLibraryAddUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Photos and videos taken with Zero EMU's Camera, and photos you edit, are saved to Photos as well. Zero EMU does not read your photo library."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Zero EMU 的「相机」拍的照片、录的录像和编辑过的照片会存一份到「照片」。Zero EMU 不读取你的照片。"
+          }
+        }
+      }
+    },
+    "NSMicrophoneUsageDescription": {
+      "extractionState": "manual",
+      "localizations": {
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Blowing on the iPhone is blowing on the handheld's microphone (the Camera's Sparkle, blowing out the candle on the Birthday Cake Box to take a picture, the microphone test, wind in the Collector's Cartridge films, games that ask you to blow); video recordings include sound. Recorded sound stays in the video file; otherwise Zero EMU only listens for a breath — nothing is recorded or uploaded."
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "对着 iPhone 吹气就是对着掌机的麦克风吹气（相机的「闪闪」、生日蛋糕盒吹蜡烛拍照、麦克风测试、典藏卡带片子里起风、要吹气的游戏）；相机录像时也录下声音。录像的声音只存在录像文件里，其余时候 Zero EMU 只听有没有在吹，不录音，也不上传。"
+          }
+        }
+      }
+    }
+  },
+  "version": "1.0"
+}

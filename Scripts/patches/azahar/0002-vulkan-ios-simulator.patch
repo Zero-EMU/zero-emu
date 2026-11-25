@@ -1,0 +1,282 @@
+diff --git a/src/video_core/renderer_vulkan/vk_instance.cpp b/src/video_core/renderer_vulkan/vk_instance.cpp
+index aea1cf5..d0047d0 100644
+--- a/src/video_core/renderer_vulkan/vk_instance.cpp
++++ b/src/video_core/renderer_vulkan/vk_instance.cpp
+@@ -14,6 +14,9 @@
+ #include "video_core/renderer_vulkan/vk_platform.h"
+ 
+ #include <vk_mem_alloc.h>
++#if defined(__APPLE__)
++#include <TargetConditionals.h>
++#endif
+ 
+ namespace Vulkan {
+ 
+@@ -230,6 +233,13 @@ FormatTraits Instance::DetermineTraits(VideoCore::PixelFormat pixel_format, vk::
+         (format_properties.optimalTilingFeatures & attachment_usage) == attachment_usage &&
+         pixel_format != VideoCore::PixelFormat::RGB8;
+     const bool supports_storage =
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++        // Modified by FoldArc on 2026-10-27: in the iOS Simulator MoltenVK backs
++        // mutable-format storage images with buffers (no native texture atomics),
++        // and Metal forbids buffer-backed render-pass attachments, so clearing such
++        // a surface fails Metal API validation. Surfaces stay non-storage there.
++        false &&
++#endif
+         (format_properties.optimalTilingFeatures & storage_usage) == storage_usage;
+     const bool needs_conversion =
+         // Requires component flip.
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.cpp b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+index 96fe552..b9d20a8 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.cpp
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.cpp
+@@ -3,6 +3,7 @@
+ // Refer to the license.txt file included.
+ 
+ #include "common/alignment.h"
++#include "common/assert.h"
+ #include "common/literals.h"
+ #include "common/logging/log.h"
+ #include "common/math_util.h"
+@@ -18,6 +19,11 @@
+ #include "video_core/renderer_vulkan/vk_scheduler.h"
+ #include "video_core/texture/texture_decode.h"
+ 
++#include <vk_mem_alloc.h>
++#if defined(__APPLE__)
++#include <TargetConditionals.h>
++#endif
++
+ namespace Vulkan {
+ 
+ namespace {
+@@ -36,6 +42,20 @@ constexpr u64 STREAM_BUFFER_SIZE = 64_MiB;
+ constexpr u64 UNIFORM_BUFFER_SIZE = 8_MiB;
+ constexpr u64 TEXTURE_BUFFER_SIZE = 2_MiB;
+ 
++// Modified by FoldArc on 2026-10-27: workarounds for the iOS Simulator's Metal,
++// which (a) makes texel-buffer views only from private-storage buffers (see
++// DeviceTexelBuffer in vk_rasterizer.h) and (b) cannot draw indexed geometry
++// with a non-zero base vertex, so indices are rebased on upload instead.
++#if defined(TARGET_OS_SIMULATOR) && TARGET_OS_SIMULATOR
++constexpr bool UseDeviceTexelBuffers = true;
++constexpr bool RebaseIndices = true;
++#else
++constexpr bool UseDeviceTexelBuffers = false;
++constexpr bool RebaseIndices = false;
++#endif
++constexpr vk::BufferUsageFlags TEXEL_STREAM_USAGE =
++    vk::BufferUsageFlagBits::eUniformTexelBuffer | vk::BufferUsageFlagBits::eTransferSrc;
++
+ constexpr vk::BufferUsageFlags BUFFER_USAGE =
+     vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eIndexBuffer;
+ 
+@@ -70,10 +90,8 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
+       stream_buffer{instance, scheduler, BUFFER_USAGE, STREAM_BUFFER_SIZE},
+       uniform_buffer{instance, scheduler, vk::BufferUsageFlagBits::eUniformBuffer,
+                      UNIFORM_BUFFER_SIZE},
+-      texture_buffer{instance, scheduler, vk::BufferUsageFlagBits::eUniformTexelBuffer,
+-                     TextureBufferSize(instance)},
+-      texture_lf_buffer{instance, scheduler, vk::BufferUsageFlagBits::eUniformTexelBuffer,
+-                        TextureBufferSize(instance)},
++      texture_buffer{instance, scheduler, TEXEL_STREAM_USAGE, TextureBufferSize(instance)},
++      texture_lf_buffer{instance, scheduler, TEXEL_STREAM_USAGE, TextureBufferSize(instance)},
+       async_shaders{Settings::values.async_shader_compilation.GetValue()} {
+ 
+     vertex_buffers.fill(stream_buffer.Handle());
+@@ -90,20 +108,29 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
+     pipeline_info.state.vertex_layout = software_layout;
+ 
+     const vk::Device device = instance.GetDevice();
++    vk::Buffer lf_view_buffer = texture_lf_buffer.Handle();
++    vk::Buffer view_buffer = texture_buffer.Handle();
++    device_texel_buffers = UseDeviceTexelBuffers;
++    if (device_texel_buffers) {
++        texture_lf_buffer_device = CreateDeviceTexelBuffer(TextureBufferSize(instance));
++        texture_buffer_device = CreateDeviceTexelBuffer(TextureBufferSize(instance));
++        lf_view_buffer = texture_lf_buffer_device.buffer;
++        view_buffer = texture_buffer_device.buffer;
++    }
+     texture_lf_view = device.createBufferViewUnique({
+-        .buffer = texture_lf_buffer.Handle(),
++        .buffer = lf_view_buffer,
+         .format = vk::Format::eR32G32Sfloat,
+         .offset = 0,
+         .range = VK_WHOLE_SIZE,
+     });
+     texture_rg_view = device.createBufferViewUnique({
+-        .buffer = texture_buffer.Handle(),
++        .buffer = view_buffer,
+         .format = vk::Format::eR32G32Sfloat,
+         .offset = 0,
+         .range = VK_WHOLE_SIZE,
+     });
+     texture_rgba_view = device.createBufferViewUnique({
+-        .buffer = texture_buffer.Handle(),
++        .buffer = view_buffer,
+         .format = vk::Format::eR32G32B32A32Sfloat,
+         .offset = 0,
+         .range = VK_WHOLE_SIZE,
+@@ -137,7 +164,66 @@ RasterizerVulkan::RasterizerVulkan(Memory::MemorySystem& memory, Pica::PicaCore&
+     update_queue.Flush();
+ }
+ 
+-RasterizerVulkan::~RasterizerVulkan() = default;
++RasterizerVulkan::~RasterizerVulkan() {
++    if (device_texel_buffers) {
++        instance.GetDevice().waitIdle();
++        texture_lf_view.reset();
++        texture_rg_view.reset();
++        texture_rgba_view.reset();
++        for (const DeviceTexelBuffer* b : {&texture_lf_buffer_device, &texture_buffer_device}) {
++            if (b->buffer) {
++                vmaDestroyBuffer(instance.GetAllocator(), static_cast<VkBuffer>(b->buffer),
++                                 b->allocation);
++            }
++        }
++    }
++}
++
++RasterizerVulkan::DeviceTexelBuffer RasterizerVulkan::CreateDeviceTexelBuffer(u64 size) {
++    const VkBufferCreateInfo buffer_info = {
++        .sType = VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO,
++        .size = size,
++        .usage = VK_BUFFER_USAGE_UNIFORM_TEXEL_BUFFER_BIT | VK_BUFFER_USAGE_TRANSFER_DST_BIT,
++        .sharingMode = VK_SHARING_MODE_EXCLUSIVE,
++    };
++    const VmaAllocationCreateInfo alloc_info = {
++        .usage = VMA_MEMORY_USAGE_AUTO_PREFER_DEVICE,
++        .requiredFlags = VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT,
++    };
++    VkBuffer buffer{};
++    VmaAllocation allocation{};
++    const VkResult result = vmaCreateBuffer(instance.GetAllocator(), &buffer_info, &alloc_info,
++                                            &buffer, &allocation, nullptr);
++    ASSERT_MSG(result == VK_SUCCESS, "Failed to allocate device texel buffer: {}",
++               static_cast<int>(result));
++    return {vk::Buffer{buffer}, allocation};
++}
++
++void RasterizerVulkan::CopyToDeviceTexelBuffer(vk::Buffer src, vk::Buffer dst, u32 offset,
++                                               u32 size) {
++    if (size == 0) {
++        return;
++    }
++    renderpass_cache.EndRendering();
++    scheduler.Record([src, dst, offset, size](vk::CommandBuffer cmdbuf) {
++        const vk::MemoryBarrier before = {
++            .srcAccessMask = vk::AccessFlagBits::eShaderRead,
++            .dstAccessMask = vk::AccessFlagBits::eTransferWrite,
++        };
++        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eFragmentShader,
++                               vk::PipelineStageFlagBits::eTransfer, vk::DependencyFlags{}, before,
++                               {}, {});
++        const vk::BufferCopy copy = {.srcOffset = offset, .dstOffset = offset, .size = size};
++        cmdbuf.copyBuffer(src, dst, copy);
++        const vk::MemoryBarrier after = {
++            .srcAccessMask = vk::AccessFlagBits::eTransferWrite,
++            .dstAccessMask = vk::AccessFlagBits::eShaderRead,
++        };
++        cmdbuf.pipelineBarrier(vk::PipelineStageFlagBits::eTransfer,
++                               vk::PipelineStageFlagBits::eFragmentShader, vk::DependencyFlags{},
++                               after, {}, {});
++    });
++}
+ 
+ void RasterizerVulkan::TickFrame() {
+     scheduler.WaitWorker();
+@@ -474,7 +560,7 @@ bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
+ 
+     const DrawParams params = {
+         .vertex_count = regs.pipeline.num_vertices,
+-        .vertex_offset = -static_cast<s32>(vertex_info.vs_input_index_min),
++        .vertex_offset = RebaseIndices ? 0 : -static_cast<s32>(vertex_info.vs_input_index_min),
+         .binding_count = pipeline_info.state.vertex_layout.binding_count,
+         .bindings = binding_offsets,
+         .is_indexed = is_indexed,
+@@ -497,7 +583,7 @@ bool RasterizerVulkan::AccelerateDrawBatchInternal(bool is_indexed) {
+ 
+ void RasterizerVulkan::SetupIndexArray() {
+     const bool index_u8 = regs.pipeline.index_array.format == 0;
+-    const bool native_u8 = index_u8 && instance.IsIndexTypeUint8Supported();
++    const bool native_u8 = index_u8 && instance.IsIndexTypeUint8Supported() && !RebaseIndices;
+     const u32 index_buffer_size = regs.pipeline.num_vertices * (native_u8 ? 1 : 2);
+     const vk::IndexType index_type = native_u8 ? vk::IndexType::eUint8EXT : vk::IndexType::eUint16;
+ 
+@@ -507,7 +593,21 @@ void RasterizerVulkan::SetupIndexArray() {
+ 
+     auto [index_ptr, index_offset, _] = stream_buffer.Map(index_buffer_size, 2);
+ 
+-    if (index_u8 && !native_u8) {
++    if (RebaseIndices) {
++        // Vertices were uploaded starting at vs_input_index_min; shift the indices
++        // instead of passing a base vertex (FoldArc, see RebaseIndices).
++        const u32 base = vertex_info.vs_input_index_min;
++        u16* index_ptr_u16 = reinterpret_cast<u16*>(index_ptr);
++        for (u32 i = 0; i < regs.pipeline.num_vertices; i++) {
++            u32 index = index_data[i];
++            if (!index_u8) {
++                u16 wide;
++                std::memcpy(&wide, index_data + i * sizeof(u16), sizeof(u16));
++                index = wide;
++            }
++            index_ptr_u16[i] = static_cast<u16>(index - base);
++        }
++    } else if (index_u8 && !native_u8) {
+         u16* index_ptr_u16 = reinterpret_cast<u16*>(index_ptr);
+         for (u32 i = 0; i < regs.pipeline.num_vertices; i++) {
+             index_ptr_u16[i] = index_data[i];
+@@ -907,6 +1007,10 @@ void RasterizerVulkan::SyncAndUploadLUTsLF() {
+     }
+ 
+     texture_lf_buffer.Commit(static_cast<u32>(bytes_used));
++    if (device_texel_buffers) {
++        CopyToDeviceTexelBuffer(texture_lf_buffer.Handle(), texture_lf_buffer_device.buffer, offset,
++                                static_cast<u32>(bytes_used));
++    }
+ }
+ 
+ void RasterizerVulkan::SyncAndUploadLUTs() {
+@@ -981,6 +1085,10 @@ void RasterizerVulkan::SyncAndUploadLUTs() {
+     pica.proctex.table_dirty = 0;
+ 
+     texture_buffer.Commit(static_cast<u32>(bytes_used));
++    if (device_texel_buffers) {
++        CopyToDeviceTexelBuffer(texture_buffer.Handle(), texture_buffer_device.buffer, offset,
++                                static_cast<u32>(bytes_used));
++    }
+ }
+ 
+ void RasterizerVulkan::UploadUniforms(bool accelerate_draw) {
+diff --git a/src/video_core/renderer_vulkan/vk_rasterizer.h b/src/video_core/renderer_vulkan/vk_rasterizer.h
+index 0fe71d8..72c7040 100644
+--- a/src/video_core/renderer_vulkan/vk_rasterizer.h
++++ b/src/video_core/renderer_vulkan/vk_rasterizer.h
+@@ -113,6 +113,17 @@ private:
+     /// Creates the vertex layout struct used for software shader pipelines
+     void MakeSoftwareVertexLayout();
+ 
++    // Modified by FoldArc on 2026-10-27: on the iOS Simulator, Metal only makes a
++    // linear texture (MoltenVK's texel buffer view) from a buffer in private
++    // storage, so there the LUT buffers the shaders read are device-local copies
++    // of the host-visible stream buffers.
++    struct DeviceTexelBuffer {
++        vk::Buffer buffer{};
++        VmaAllocation allocation{};
++    };
++    DeviceTexelBuffer CreateDeviceTexelBuffer(u64 size);
++    void CopyToDeviceTexelBuffer(vk::Buffer src, vk::Buffer dst, u32 offset, u32 size);
++
+ private:
+     const Instance& instance;
+     Scheduler& scheduler;
+@@ -136,6 +147,9 @@ private:
+     vk::UniqueBufferView texture_lf_view;
+     vk::UniqueBufferView texture_rg_view;
+     vk::UniqueBufferView texture_rgba_view;
++    bool device_texel_buffers{false};          ///< FoldArc: views point at the copies below
++    DeviceTexelBuffer texture_buffer_device{};
++    DeviceTexelBuffer texture_lf_buffer_device{};
+     vk::DeviceSize uniform_buffer_alignment;
+     u32 uniform_size_aligned_vs_pica;
+     u32 uniform_size_aligned_vs;

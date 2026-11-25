@@ -1,0 +1,67 @@
+diff --git a/src/video_core/renderer_software/sw_rasterizer.cpp b/src/video_core/renderer_software/sw_rasterizer.cpp
+index a64c951..e810490 100644
+--- a/src/video_core/renderer_software/sw_rasterizer.cpp
++++ b/src/video_core/renderer_software/sw_rasterizer.cpp
+@@ -303,8 +303,10 @@ void RasterizerSoftware::ProcessTriangle(const Vertex& v0, const Vertex& v1, con
+ 
+     // Enter rasterization loop, starting at the center of the topleft bounding box corner.
+     // TODO: Not sure if looping through x first might be faster
+-    for (u16 y = min_y + 8; y < max_y; y += 0x10) {
+-        const auto process_scanline = [&, y] {
++    // Modified by FoldArc on 2026-10-27: the scanline body below is unchanged; only the way
++    // scanlines are handed to the worker threads differs (see the end of this function).
++    {
++        const auto process_scanline = [&](const u16 y) {
+             for (u16 x = min_x + 8; x < max_x; x += 0x10) {
+                 // Do not process the pixel if it's inside the scissor box and the scissor mode is
+                 // set to Exclude.
+@@ -467,9 +469,47 @@ void RasterizerSoftware::ProcessTriangle(const Vertex& v0, const Vertex& v1, con
+                 }
+             }
+         };
+-        sw_workers.QueueWork(std::move(process_scanline));
++
++        // Modified by FoldArc on 2026-10-27. Upstream queued one task per scanline and then
++        // waited, so a frame made of many small triangles spent most of its time in the work
++        // queue's mutex and condition variables instead of shading pixels. Small triangles are
++        // now shaded on the calling thread, and larger ones are split into a few tasks that
++        // each own whole 8-row framebuffer tiles (so no two threads write the same tile). Every
++        // scanline is still shaded exactly once by the same code, and this function still
++        // returns only after all of them are done, so the output is unchanged.
++        const u32 first_y = min_y + 8;
++        const u32 rows = first_y < max_y ? (max_y - first_y + 0xF) >> 4 : 0;
++        const u32 cols = min_x + 8u < max_x ? (max_x - (min_x + 8u) + 0xF) >> 4 : 0;
++        if (rows == 0 || cols == 0) {
++            return;
++        }
++        static constexpr u32 PixelsPerTask = 512;
++        const u32 base_py = min_y >> 4;
++        const s32 fb_top = static_cast<s32>(regs.framebuffer.framebuffer.height.Value());
++        const auto tile_of = [&](u32 row) {
++            return (fb_top - static_cast<s32>(base_py + row)) >> 3;
++        };
++        const s32 first_tile = tile_of(0);
++        const u32 tiles = static_cast<u32>(first_tile - tile_of(rows - 1)) + 1;
++        const u32 tasks = std::min<u32>(
++            {rows * cols / PixelsPerTask, tiles, static_cast<u32>(num_sw_threads) * 4});
++        if (tasks <= 1) {
++            for (u32 row = 0; row < rows; ++row) {
++                process_scanline(static_cast<u16>(first_y + (row << 4)));
++            }
++            return;
++        }
++        for (u32 task = 0; task < tasks; ++task) {
++            sw_workers.QueueWork([&, task, tasks] {
++                for (u32 row = 0; row < rows; ++row) {
++                    if (static_cast<u32>(first_tile - tile_of(row)) % tasks == task) {
++                        process_scanline(static_cast<u16>(first_y + (row << 4)));
++                    }
++                }
++            });
++        }
++        sw_workers.WaitForRequests();
+     }
+-    sw_workers.WaitForRequests();
+ }
+ 
+ std::array<Common::Vec4<u8>, 4> RasterizerSoftware::TextureColor(

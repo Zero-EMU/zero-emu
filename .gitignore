@@ -1,0 +1,33 @@
+# Xcode
+.build/
+DerivedData/
+xcuserdata/
+*.xcuserstate
+# Azahar sources and build output (fetched by Scripts/build-azahar-ios.sh)
+Third-Party/azahar/
+Third-Party/azahar-build-ios/
+Third-Party/azahar-build-ios-sim/
+Third-Party/moltenvk/
+# Never commit game files, keys, firmware or system files
+*.3ds
+*.cci
+*.cia
+*.3dsx
+*.cxi
+*.zcci
+*.zcxi
+*.z3dsx
+aes_keys.txt
+# macOS
+.DS_Store
+# Files set aside for deletion
+_to_delete/
+.build-ignore-note.txt
+# Development records (notes, logs, screenshots, store metadata) are not part of the repository;
+# only the support and privacy pages and the public release info are.
+Docs/*
+!Docs/AppStore/
+Docs/AppStore/*
+!Docs/AppStore/site/
+!Docs/AppStore/release-info.env
+Docs/AppStore/site/README.md

@@ -1,0 +1,91 @@
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -772,3 +772,76 @@
+ void retro_cheat_reset() {}
+ 
+ void retro_cheat_set(unsigned index, bool enabled, const char* code) {}
++
++#include <array>
++#include <cstring>
++#include <memory>
++#include <string>
++
++// Zero EMU: compressed game files (Z3DS: .zcci, .zcxi, .z3dsx) read by the
++// frontend through the core's own reader — the library looks into a file
++// (its header, its title and icon, whether it is encrypted) before taking
++// it in, and for a compressed one that needs the decompressed bytes. Nothing
++// here is used while a game runs.
++#include "common/file_derived.h"
++#include "common/zstd_compression.h"
++
++extern "C" {
++
++/// Opens a Z3DS file for reading. nullptr: not there, or not a Z3DS file.
++RETRO_API void* zeroemu_z3ds_open(const char* path) {
++    if (path == nullptr) {
++        return nullptr;
++    }
++    auto raw = std::make_unique<FileUtil::IOFile>(std::string(path), "rb");
++    if (!raw->IsOpen() || !FileUtil::Z3DSReadIOFile::IsZ3DSIOFile(raw.get())) {
++        return nullptr;
++    }
++    auto file = std::make_unique<FileUtil::Z3DSReadIOFile>(std::move(raw));
++    if (!file->IsGood()) {
++        return nullptr;
++    }
++    return file.release();
++}
++
++/// The size of what is inside, decompressed.
++RETRO_API uint64_t zeroemu_z3ds_size(void* handle) {
++    return handle ? static_cast<FileUtil::Z3DSReadIOFile*>(handle)->GetSize() : 0;
++}
++
++/// The four bytes that say what is inside ("NCSD", "NCCH", "3DSX", ...).
++RETRO_API void zeroemu_z3ds_magic(void* handle, uint8_t* out) {
++    if (handle == nullptr || out == nullptr) {
++        return;
++    }
++    const auto magic = static_cast<FileUtil::Z3DSReadIOFile*>(handle)->GetFileMagic();
++    std::memcpy(out, magic.data(), 4);
++}
++
++/// `length` decompressed bytes from `offset` into `buffer`; how many were read.
++RETRO_API uint64_t zeroemu_z3ds_read(void* handle, uint64_t offset, void* buffer, uint64_t length) {
++    if (handle == nullptr || buffer == nullptr) {
++        return 0;
++    }
++    return static_cast<FileUtil::Z3DSReadIOFile*>(handle)->ReadAtBytes(
++        static_cast<u8*>(buffer), static_cast<std::size_t>(length), static_cast<std::size_t>(offset));
++}
++
++RETRO_API void zeroemu_z3ds_close(void* handle) {
++    delete static_cast<FileUtil::Z3DSReadIOFile*>(handle);
++}
++
++/// Compresses `source` into a Z3DS file at `destination` (the frontend's own
++/// tests make their compressed files with it). 1: done.
++RETRO_API int zeroemu_z3ds_compress(const char* source, const char* destination, const uint8_t* magic) {
++    if (source == nullptr || destination == nullptr || magic == nullptr) {
++        return 0;
++    }
++    const std::array<u8, 4> underlying{magic[0], magic[1], magic[2], magic[3]};
++    return FileUtil::CompressZ3DSFile(source, destination, underlying,
++                                      FileUtil::Z3DSWriteIOFile::DEFAULT_FRAME_SIZE)
++               ? 1
++               : 0;
++}
++
++} // extern "C"
+--- a/src/citra_libretro/libretro.osx.def
++++ b/src/citra_libretro/libretro.osx.def
+@@ -25,3 +25,9 @@
+ _retro_get_region
+ _retro_get_memory_data
+ _retro_get_memory_size
++_zeroemu_z3ds_open
++_zeroemu_z3ds_size
++_zeroemu_z3ds_magic
++_zeroemu_z3ds_read
++_zeroemu_z3ds_close
++_zeroemu_z3ds_compress
